@@ -1,0 +1,9 @@
+"""
+Root Query type.
+"""
+type Query {
+  """
+  Provides a cite.
+  """
+  cite: String!
+}
