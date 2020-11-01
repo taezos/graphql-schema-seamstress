@@ -4,9 +4,9 @@ let
 
   haskellPackages = pkgs.haskellPackages.override {
     overrides = self: super: {
-      graphql = super.callCabal2nix "graphql" (builtins.fetchGit {
-        url = "git@github.com:caraus-ecms/graphql.git";
-        rev = "7c0b0ace4dacbb581669f88b83b9643a83fc797a";
+      morpheus-graphql-core = super.callCabal2nix "morpheus-graphql-core" (builtins.fetchGit {
+        url = "gitea@taezos.org:piq9117/morpheus-graphql-core.git";
+        rev = "a55cac79dce3bc3a9f61b1d3d3009e13b97e3812";
       }){};
     };
   };
