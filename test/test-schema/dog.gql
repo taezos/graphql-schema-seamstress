@@ -1,3 +1,7 @@
 type Query {
   dog: String
 }
+
+type Dog {
+  name: String
+}

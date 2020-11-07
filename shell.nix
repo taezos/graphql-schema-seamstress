@@ -6,7 +6,7 @@ let
     overrides = self: super: {
       morpheus-graphql-core = super.callCabal2nix "morpheus-graphql-core" (builtins.fetchGit {
         url = "gitea@taezos.org:piq9117/morpheus-graphql-core.git";
-        rev = "a55cac79dce3bc3a9f61b1d3d3009e13b97e3812";
+        rev = "086b60fa0246796d10cd8fec097c22557be34c37";
       }){};
     };
   };

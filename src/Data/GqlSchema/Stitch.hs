@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 module Data.GqlSchema.Stitch where
 
 -- bytestring
@@ -14,6 +13,7 @@ import           System.Directory
 import           System.FilePath.Posix
 
 -- graphql-stitch-vomit
+import           Data.GqlSchema.Feedback
 import           Import
 
 -- morpheus-graphql-core
@@ -31,31 +31,47 @@ import           Lens.Micro
 -- unordered-containers
 import qualified Data.HashMap.Strict              as HS
 
-import Control.Exception
+import           Control.Exception                (IOException)
 
--- | Stitches all the queries in one file.
-stitchQuery
+import           Control.Exception.Safe           (MonadCatch, throwM, tryJust)
+
+class Monad m => ManageQuery m where
+  stitchQuery :: Schemas -> m ( Schema VALID )
+  readSchemas :: FilePath -> m Schemas
+  vomitQuery :: FilePath -> Schema VALID -> m ()
+
+type Schemas = [ ByteString ]
+
+-- | Stitches all the type Queries in one file.
+stitchQueryImpl
+  :: [ ByteString ]
+  -> IO ( Either String ( Schema VALID ) )
+stitchQueryImpl schemas = do
+  pure $ updateSchema $ parseDocument <$> schemas
+
+-- | Reads all the schemas from the source directory.
+readSchemasImpl
   :: FilePath
   -- ^ Source directory of schema.
-  -> IO ( Either String ( Schema VALID ) )
-stitchQuery fp = do
+  -> IO [ ByteString ]
+readSchemasImpl fp = do
   filePaths <- listDirectory fp
   let
     validFilePaths = makeValid
       . (\fps -> fp <> ( pathSeparator : fps ) )
       <$> filePaths
-  docs <- sequence $ BS.readFile <$> validFilePaths
-  pure $ updateSchema $ parseDocument <$> docs
+  sequence $ BS.readFile <$> validFilePaths
 
 -- | Vomits all the queries in one file
-vomitQuery
-  :: FilePath
-  -- ^ Target file.
-  -> Either String ( Schema VALID ) -> IO ( Either String () )
-vomitQuery fp schema = case schema of
-  Left err -> pure $ Left err
-  Right s -> tryJust (\(e :: IOException ) -> Just $ show e )
-    $ writeSchema fp ( renderSchema s )
+vomitQueryImpl
+  :: ( MonadCatch m, MonadIO m )
+  => FilePath
+  -> Schema VALID
+  -> m ( Either StitchVomitError () )
+vomitQueryImpl fp schema = do
+  res <- liftIO $ tryJust (\( e :: IOException ) -> throwM e)
+    $ writeSchema fp ( renderSchema schema )
+  pure $ first undefined res
 
 parseDocument :: ByteString -> Either String ( Schema VALID )
 parseDocument = parseDSL . BL.fromStrict
@@ -70,15 +86,34 @@ typeNameQuery = "Query"
 filterQuery
   :: [ Either String ( Schema VALID ) ]
   -> [ Either String ( Schema VALID ) ]
-filterQuery parsedDocs =
-  -- TODO: replace with foldr
-  (\parseDoc -> case parseDoc of
-      Left err -> Left err : []
+filterQuery parsedDocs = foldr filterByTypeNameQuery [] parsedDocs
+  where
+    filterByTypeNameQuery
+      :: Either String ( Schema VALID )
+      -> [ Either String ( Schema VALID ) ]
+      -> [ Either String ( Schema VALID ) ]
+    filterByTypeNameQuery pd accum =  case pd of
+      Left err -> Left err : accum
       Right schema ->
         if typeNameQuery == ( schema ^. queryL . typeNameL & readTypeName )
-        then Right ( mkEmptyTypes schema ) : []
-        else []
-  ) =<< parsedDocs
+        then Right ( mkEmptyTypes schema ) : accum
+        else accum
+
+filterQuery'
+  :: [ Either String ( Schema VALID ) ]
+  -> [ Either String ( Schema VALID ) ]
+filterQuery' parsedDocs = foldr filterByTypeNameQuery [] parsedDocs
+  where
+    filterByTypeNameQuery
+      :: Either String ( Schema VALID )
+      -> [ Either String ( Schema VALID ) ]
+      -> [ Either String ( Schema VALID ) ]
+    filterByTypeNameQuery pd accum =  case pd of
+      Left err -> Left err : accum
+      Right schema ->
+        if typeNameQuery == ( schema ^. queryL . typeNameL & readTypeName )
+        then Right ( mkEmptyTypes schema ) : accum
+        else accum
 
 getFirstQuery
   :: [ Either String ( Schema VALID ) ]
@@ -118,19 +153,23 @@ renderSchema = BL.toStrict . render
 writeSchema :: FilePath -> ByteString -> IO ()
 writeSchema fp bs = BS.writeFile fp bs
 
--- TODO: get all mapEntries from Schema Valid
-updateSchema :: [ Either String ( Schema VALID ) ] -> Either String ( Schema VALID )
-updateSchema parsedDocs = case getFirstQuery parsedDocs of
-  Left err -> Left err
-  Right schema ->
-    let
-      -- mapEntries
-      me :: [ HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) ) ]
-      me = foldr (\a _ -> a ^. queryL . typeContentL . objectFieldsL . mapEntriesL ) HS.empty <$> parsedDocs
+updateSchema
+  :: [ Either String ( Schema VALID ) ]
+  -> Either String ( Schema VALID )
+updateSchema parsedDocs = updateSchemaEntries ( mkMapEntries parsedDocs )
+  <$> getFirstQuery parsedDocs
+  where
+    mkMapEntries
+      :: [ Either String ( Schema VALID ) ]
+      -> HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
+    mkMapEntries pds = HS.unions
+      $ foldr (\a _ -> a ^. queryL . typeContentL . objectFieldsL . mapEntriesL ) HS.empty
+      <$> pds
 
-    in Right $ updateSchemaEntries ( HS.unions me ) schema
-
-updateSchemaEntries :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) ) -> Schema VALID -> Schema VALID
+updateSchemaEntries
+  :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
+  -> Schema VALID
+  -> Schema VALID
 updateSchemaEntries newMapEntries s = s
   & queryL
   . typeContentL
@@ -141,6 +180,26 @@ updateSchemaEntries newMapEntries s = s
 -- | Empty the types field.
 mkEmptyTypes :: Schema s -> Schema s
 mkEmptyTypes s = s & typesL .~ ( unsafeFromList [] )
+
+updateSchemaTypes
+  :: [ Either String ( Schema VALID ) ]
+  -> Either String ( Schema VALID )
+  -> Either String ( Schema VALID )
+updateSchemaTypes parsedDocs updatedSchema = case updatedSchema of
+  Left err -> Left err
+  Right schema ->
+    let
+      ts = parsedDocs <&> (\parsedDoc -> parsedDoc <&> ( ^. typesL ) )
+      t = foldr
+          (\a b -> case a of
+              Left _  -> b
+              Right d -> d : b
+            ) [] ts
+    in Right $ schema & typesL .~ ( unsafeFromList $ HS.toList $ HS.unions $ unsafeToHashMap <$> t )
+
+-- TODO: remove, only for manual testing.
+getTypes :: Schema a -> TypeLib a
+getTypes s = s ^. typesL
 
 -- * Lens Util
 
