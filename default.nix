@@ -1,6 +1,6 @@
 { mkDerivation, base, bytestring, relude, stdenv, text
 , directory, filepath, morpheus-graphql-core, microlens, unordered-containers
-, optparse-applicative, mtl, safe-exceptions
+, optparse-applicative, mtl, safe-exceptions, unliftio, ansi-terminal
 }:
 mkDerivation {
   pname = "graphql-stitch-vomit";
@@ -11,6 +11,7 @@ mkDerivation {
   libraryHaskellDepends =
     [ base bytestring relude text filepath directory morpheus-graphql-core
       microlens unordered-containers optparse-applicative mtl safe-exceptions
+      unliftio ansi-terminal
     ];
   executableHaskellDepends = [ base ];
   license = "unknown";

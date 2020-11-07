@@ -3,15 +3,15 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 module Data.GqlSchema.CLI where
 
+-- graphql-stitch-vomit
 import           Import
 
+-- optparse-applicative
 import           Options.Applicative
-
-import           Data.GqlSchema.Feedback
 
 class Monad m => ManageCLI m where
   parseCliCommand :: m Command
-  interpretCliCommand :: Command -> m [ StitchVomitResponse ]
+  interpretCliCommand :: Command -> m ()
 
 data Command
   = StitchVomit StitchVomitInput

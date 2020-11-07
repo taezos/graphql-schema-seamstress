@@ -3,8 +3,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.GqlSchema.Stitch where
 
+-- base
+import           Control.Exception                (IOException)
+
 -- bytestring
 import qualified Data.ByteString.Char8            as BS
+import qualified Data.ByteString.Lazy.Char8       as BL
 
 -- directory
 import           System.Directory
@@ -16,45 +20,50 @@ import           System.FilePath.Posix
 import           Data.GqlSchema.Feedback
 import           Import
 
+-- microlens
+import           Lens.Micro
+
 -- morpheus-graphql-core
 import           Data.Morpheus.Core
 import           Data.Morpheus.Ext.Map
 import           Data.Morpheus.Ext.SafeHashMap
 import           Data.Morpheus.Types.Internal.AST
 
--- bytestring
-import qualified Data.ByteString.Lazy.Char8       as BL
-
--- microlens
-import           Lens.Micro
+-- safe-exceptions
+import           Control.Exception.Safe           (throwM, tryJust)
 
 -- unordered-containers
 import qualified Data.HashMap.Strict              as HS
 
-import           Control.Exception                (IOException)
-
-import           Control.Exception.Safe           (MonadCatch, throwM, tryJust)
+import qualified Data.Text                        as T
+import qualified Data.Text.Encoding               as TE
 
 class Monad m => ManageQuery m where
-  stitchQuery :: Schemas -> m ( Schema VALID )
+  stitchQuery :: Schemas -> m ( Either StitchVomitError ( Schema VALID ) )
   readSchemas :: FilePath -> m Schemas
-  vomitQuery :: FilePath -> Schema VALID -> m ()
+  vomitQuery :: FilePath -> Schema VALID -> m ( Either StitchVomitError FilePath )
 
 type Schemas = [ ByteString ]
 
 -- | Stitches all the type Queries in one file.
 stitchQueryImpl
-  :: [ ByteString ]
-  -> IO ( Either String ( Schema VALID ) )
-stitchQueryImpl schemas = do
-  pure $ updateSchema $ parseDocument <$> schemas
+  :: Monad m
+  => Schemas
+  -> m ( Either StitchVomitError ( Schema VALID ) )
+stitchQueryImpl schemas = pure
+  . first ( StitchError . T.pack )
+  . updateSchema
+  $ parseDocument
+  <$> schemas
 
 -- | Reads all the schemas from the source directory.
 readSchemasImpl
-  :: FilePath
+  :: MonadIO m
+  => FilePath
   -- ^ Source directory of schema.
-  -> IO [ ByteString ]
-readSchemasImpl fp = do
+  -> m [ ByteString ]
+readSchemasImpl fp = liftIO $ do
+  -- TODO: try io exception.
   filePaths <- listDirectory fp
   let
     validFilePaths = makeValid
@@ -64,14 +73,24 @@ readSchemasImpl fp = do
 
 -- | Vomits all the queries in one file
 vomitQueryImpl
-  :: ( MonadCatch m, MonadIO m )
+  :: MonadIO m
   => FilePath
   -> Schema VALID
-  -> m ( Either StitchVomitError () )
+  -> m ( Either StitchVomitError FilePath )
 vomitQueryImpl fp schema = do
-  res <- liftIO $ tryJust (\( e :: IOException ) -> throwM e)
-    $ writeSchema fp ( renderSchema schema )
-  pure $ first undefined res
+  res <- liftIO $ tryJust (\( e :: IOException ) -> throwM $ VomitError $ show e)
+    $ writeSchema fp ( vomitMessage <> renderSchema schema )
+  absolutePath <- liftIO $ getCurrentDirectory
+  pure $ second ( const $ absolutePath <> ( pathSeparator : fp ) ) res
+  where
+    vomitMessage :: ByteString
+    vomitMessage = TE.encodeUtf8 $ unlines
+      [ "\"\"\""
+      , "DO NOT EDIT."
+      , "THIS FILE IS MEANT TO BE OVERWRITTEN BY GRAPHQL-STITCH-VOMIT."
+      , "YOU HAVE BEEN WARNED!!!"
+      , "\"\"\""
+      ]
 
 parseDocument :: ByteString -> Either String ( Schema VALID )
 parseDocument = parseDSL . BL.fromStrict

@@ -1,8 +1,0 @@
-type Query {
-  person(firstName: String): String
-  dog: String
-}
-
-schema {
-  query: Query
-}
