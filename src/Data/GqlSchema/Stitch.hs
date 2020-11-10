@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 module Data.GqlSchema.Stitch where
@@ -220,3 +221,4 @@ objectFieldsL = lens objectFields (\dt newObjectFields -> dt { objectFields = ne
 
 mapEntriesL :: Lens' ( OrdMap k a ) ( HashMap k ( Indexed k a ) )
 mapEntriesL = lens mapEntries (\om newOrdMap -> om { mapEntries = newOrdMap })
+
