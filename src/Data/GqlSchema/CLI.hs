@@ -4,14 +4,16 @@
 module Data.GqlSchema.CLI where
 
 -- graphql-stitch-vomit
+import           Data.GqlSchema.Feedback
 import           Import
 
 -- optparse-applicative
 import           Options.Applicative
 
-class Monad m => ManageCLI m where
+
+class MonadError StitchVomitError m => ManageCLI m where
   parseCliCommand :: m Command
-  interpretCliCommand :: Command -> m ()
+  interpretCliCommand :: Command -> m FilePath
 
 data Command
   = StitchVomit StitchVomitInput
@@ -25,8 +27,8 @@ data StitchVomitInput  = StitchVomitInput
 parseCommand :: Parser Command
 parseCommand = StitchVomit
   <$> ( StitchVomitInput
-        <$> strOption ( long "schema-src-dir" <> help "Schema source directory." )
-        <*> strOption ( long "vomit-output" <> help "Stitched result of all the schemas." )
+        <$> strOption ( long "src-dir" <> help "Schema source directory." )
+        <*> strOption ( long "output" <> help "Stitched result of all the schemas." )
       )
 
 showHelpOnErrorExecParser :: ParserInfo a -> IO a

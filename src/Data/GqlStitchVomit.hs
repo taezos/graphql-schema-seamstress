@@ -13,65 +13,40 @@ import           Import
 -- optparse-applicative
 import           Options.Applicative
 
--- safe-exceptions
-import           Control.Exception.Safe
-
 -- text
 import qualified Data.Text               as T
 
--- morpheus-graphql-core
-import           Data.Morpheus.Types.Internal.AST
-
-newtype AppM a
+newtype AppM m a
   = AppM
-  { unAppM :: IO a
+  { unAppM :: ( ExceptT StitchVomitError m ) a
   } deriving
   ( Functor
   , Applicative
   , Monad
   , MonadIO
-  , MonadThrow
-  , MonadCatch
+  , MonadError StitchVomitError
   )
 
 runApp :: IO ()
 runApp = do
-  unAppM $ interpretCliCommand =<< parseCliCommand
+  res <- runExceptT $ unAppM $ interpretCliCommand =<< parseCliCommand
+  case res of
+    Left err -> logError $ stitchVomitErrorMsg err
+    Right fp -> logInfo $ "Vomitted graphql file to " <> T.pack fp
 
-instance ManageCLI AppM where
-  interpretCliCommand comm@( StitchVomit StitchVomitInput{..} ) = do
-    schemaRes <- readSchemas stitchVomitInputSchemaDirs
-    handleSchemaReadResult schemaRes comm
+instance MonadIO m => ManageCLI ( AppM m ) where
+  interpretCliCommand ( StitchVomit StitchVomitInput{..} ) = do
+    schemas <- readSchemas stitchVomitInputSchemaDirs
+    stitchedSchema <- stitchQuery schemas
+    vomitQuery stitchVomitInputOutput stitchedSchema
 
   parseCliCommand = liftIO $ showHelpOnErrorExecParser
     ( info ( helper <*> parseCommand )
       ( fullDesc <> progDesc stitchVomitDesc <> header stitcVomitHeader )
     )
 
-instance ManageQuery AppM where
+instance MonadIO m => ManageQuery ( AppM m ) where
   stitchQuery = stitchQueryImpl
   readSchemas = readSchemasImpl
   vomitQuery = vomitQueryImpl
 
-handleSchemaReadResult
-  :: ( MonadIO m, ManageQuery m )
-  => Either StitchVomitError Schemas
-  -> Command
-  -> m ()
-handleSchemaReadResult schemaRes comm = case schemaRes of
-  Left err -> logError $ show err
-  Right schemas -> do
-    stitchedSchema <- stitchQuery schemas
-    handleStitchedSchema stitchedSchema comm
-
-handleStitchedSchema
-  :: ( MonadIO m, ManageQuery m )
-  => Either StitchVomitError ( Schema VALID )
-  -> Command -> m ()
-handleStitchedSchema stitchedSchema ( StitchVomit StitchVomitInput{..} ) =
-  case stitchedSchema of
-    Left err -> logInfo $ show err
-    Right schema -> either
-      ( logError . show )
-      (\fp -> logInfo $ "Vomitted graphql file to " <> T.pack fp )
-      =<< vomitQuery stitchVomitInputOutput schema
