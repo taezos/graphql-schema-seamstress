@@ -9,5 +9,8 @@ spec :: Spec
 spec = do
   describe "Stitch" $ do
     it "should stitch query" $ do
-      gqls <- stitchQuery "test/test-schema"
-      shouldBe ( isRight gqls ) True
+      schemaRes <- readSchemasImpl "test/test-schema"
+      parseRes <- pure $ fmap parseDocument <$> schemaRes
+      shouldBe ( isRight $ updateSchema =<< parseRes ) True
+      shouldBe ( isRight schemaRes ) True
+      shouldBe ( isRight parseRes ) True

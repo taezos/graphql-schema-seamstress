@@ -15,6 +15,7 @@ import           Options.Applicative
 -- safe-exceptions
 import           Control.Exception.Safe
 
+-- text
 import qualified Data.Text              as T
 
 newtype AppM a
@@ -35,14 +36,17 @@ runApp = do
 
 instance ManageCLI AppM where
   interpretCliCommand ( StitchVomit StitchVomitInput{..} ) = do
-    schemas <- readSchemas stitchVomitInputSchemaDirs
-    stitchedSchema <- stitchQuery schemas
-    case stitchedSchema of
-      Left err -> logInfo $ show err
-      Right schema -> either
-        ( logError . show )
-        (\fp -> logInfo $ "Vomitted graphql file to " <> T.pack fp )
-        =<< vomitQuery stitchVomitInputOutput schema
+    schemaRes <- readSchemas stitchVomitInputSchemaDirs
+    case schemaRes of
+      Left err -> logError $ show err
+      Right schemas -> do
+        stitchedSchema <- stitchQuery schemas
+        case stitchedSchema of
+          Left err -> logInfo $ show err
+          Right schema -> either
+            ( logError . show )
+            (\fp -> logInfo $ "Vomitted graphql file to " <> T.pack fp )
+            =<< vomitQuery stitchVomitInputOutput schema
 
   parseCliCommand = liftIO $ showHelpOnErrorExecParser
     ( info ( helper <*> parseCommand )

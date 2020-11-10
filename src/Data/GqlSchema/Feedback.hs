@@ -5,8 +5,11 @@ import           Import
 
 data StitchVomitError
   = InvalidDirectory
-  | MissingOutputPath
-  | MissingSourceDirectoryPath
+  | InvalidOutputPath
+  | InvalidSourceDirectoryPath
+  | UnableToReadSchemas
+  | SchemaParseError
+  | SchemaUpdateError
   | StitchError Text
   | VomitError Text
   deriving ( Eq, Show )
