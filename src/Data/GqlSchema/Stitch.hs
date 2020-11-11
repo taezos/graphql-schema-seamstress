@@ -1,9 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 module Data.GqlSchema.Stitch where
 
 -- bytestring
@@ -114,13 +110,16 @@ stitchQueryImpl schemas = liftEither
   <$> schemas
  
 parseDocument :: ByteString -> Either StitchVomitError ( Schema VALID )
-parseDocument = first ( const $ StitchVomitError "Schema parse error" ) . parseDSL . BL.fromStrict
+parseDocument = first ( const $ StitchVomitError "Schema parse error" )
+  . parseDSL
+  . BL.fromStrict
 
 -- | Update schema with the accumulated queries from other graphql files.
 updateSchema
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-updateSchema parsedDocs = updateSchemaTypes parsedDocs $ first ( const $ StitchVomitError "Schema update error" )
+updateSchema parsedDocs = updateSchemaTypes parsedDocs
+  $ first ( const $ StitchVomitError "Schema update error" )
   $ updateSchemaEntries ( mkMapEntries parsedDocs )
   <$> getFirstQuery ( filterQuery parsedDocs )
   where
