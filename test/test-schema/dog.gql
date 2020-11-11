@@ -2,6 +2,10 @@ type Query {
   dog: String
 }
 
+type Mutation {
+  setDogName(name: String): Dog
+}
+
 type Dog {
   name: String
 }

@@ -37,7 +37,7 @@ runApp = do
 instance MonadIO m => ManageCLI ( AppM m ) where
   interpretCliCommand ( StitchVomit StitchVomitInput{..} ) = do
     schemas <- readSchemas stitchVomitInputSchemaDirs
-    stitchedSchema <- stitchQuery schemas
+    stitchedSchema <- stitchSchemas schemas
     vomitQuery stitchVomitInputOutput stitchedSchema
 
   parseCliCommand = liftIO $ showHelpOnErrorExecParser
@@ -46,7 +46,7 @@ instance MonadIO m => ManageCLI ( AppM m ) where
     )
 
 instance MonadIO m => ManageQuery ( AppM m ) where
-  stitchQuery = stitchQueryImpl
+  stitchSchemas = stitchSchemasImpl
   readSchemas = readSchemasImpl
   vomitQuery = vomitQueryImpl
 

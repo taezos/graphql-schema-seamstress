@@ -2,6 +2,10 @@ type Query {
   person: Person
 }
 
+type Mutation {
+  setPersonName(name: String): Person
+}
+
 type Person {
   firstName: String
   lastName: String

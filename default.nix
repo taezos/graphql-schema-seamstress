@@ -1,5 +1,5 @@
 { mkDerivation, base, bytestring, relude, stdenv, text
-, directory, filepath, morpheus-graphql-core, microlens, unordered-containers
+, directory, filepath, morpheus-graphql-core, lens, unordered-containers
 , optparse-applicative, mtl, safe-exceptions, unliftio, ansi-terminal
 }:
 mkDerivation {
@@ -10,7 +10,7 @@ mkDerivation {
   isExecutable = true;
   libraryHaskellDepends =
     [ base bytestring relude text filepath directory morpheus-graphql-core
-      microlens unordered-containers optparse-applicative mtl safe-exceptions
+      lens unordered-containers optparse-applicative mtl safe-exceptions
       unliftio ansi-terminal
     ];
   executableHaskellDepends = [ base ];

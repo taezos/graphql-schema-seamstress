@@ -31,7 +31,7 @@ library
                      , directory
                      , filepath
                      , morpheus-graphql-core
-                     , microlens
+                     , lens
                      , unordered-containers
                      , optparse-applicative
                      , mtl

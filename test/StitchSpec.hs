@@ -5,6 +5,8 @@ import           TestImport
 
 import           Data.GqlSchema.Stitch
 
+import Data.Morpheus.Core
+
 spec :: Spec
 spec = do
   describe "Stitch" $ do
@@ -12,5 +14,7 @@ spec = do
       res <- runExceptT $ do
         schemaRes <- readSchemasImpl "test/test-schema"
         parseRes <- pure $ parseDocument <$> schemaRes
-        pure ( schemaRes, parseRes, updateSchema parseRes )
+        print $ render <$> appendAllSchemaMutations parseRes
+        pure ( schemaRes, parseRes, appendAllSchemaQueries parseRes )
+      shouldBe @Int 1 2
       shouldBe ( isRight res ) True
