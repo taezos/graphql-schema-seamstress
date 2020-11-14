@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
-import           Data.GqlStitchVomit
+import           Data.GqlSchema.GqlStitchVomit
 import           Relude
 
 main :: IO ()

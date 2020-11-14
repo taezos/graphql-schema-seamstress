@@ -107,7 +107,8 @@ stitchSchemasImpl
   => Schemas
   -> m ( Schema VALID )
 stitchSchemasImpl schemas = liftEither
-  $ fmap ( updateSchemaMutation ( parseDocument <$> schemas ) )
+  $ fmap ( updateSchemaSubscription $ parseDocument <$> schemas )
+  $ fmap ( updateSchemaMutation $ parseDocument <$> schemas )
   $ updateSchemaTypes ( parseDocument <$> schemas )
   $ appendAllSchemaQueries
   $ parseDocument
@@ -141,6 +142,14 @@ updateSchemaMutation parsedDocs stitchedQuery =
   let stitchedMutation = stitchMutations parsedDocs ^? _Right . mutationL & join
   in stitchedQuery & mutationL .~ stitchedMutation
 
+updateSchemaSubscription
+  :: [ Either StitchVomitError ( Schema VALID ) ]
+  -> Schema VALID
+  -> Schema VALID
+updateSchemaSubscription parsedDocs stitchedMutation =
+  let stitchedSubscription = stitchSubscriptions parsedDocs ^? _Right . subscriptionL & join
+  in stitchedMutation & subscriptionL .~ stitchedSubscription
+
 -- | Stitches all mutations. This does not consider what happens with the `query`
 -- so it is used in `updateSchemaMutation` where the mutation field is taken out and
 -- appened to the schema which already has a stitched query.
@@ -160,6 +169,28 @@ stitchMutations parsedDocs =
       $ foldr (\a _ -> fromMaybe HS.empty
                 $ a
                 ^. mutationL
+                ^? _Just
+                . typeContentL
+                . objectFieldsL
+                . mapEntriesL
+              ) HS.empty <$> pds
+
+stitchSubscriptions
+  :: [ Either StitchVomitError ( Schema VALID ) ]
+  -> Either StitchVomitError ( Schema VALID )
+stitchSubscriptions parsedDocs =
+  first ( const $ StitchVomitError "Schema subscription update error" )
+  $ updateSchemaSubscriptionEntries ( mkSubscriptionEntries parsedDocs )
+  <$> getFirstSubscription parsedDocs
+  where
+    mkSubscriptionEntries
+      :: [ Either StitchVomitError ( Schema VALID ) ]
+      -> HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
+    mkSubscriptionEntries pds = HS.unions
+    -- TODO: learn folds to get rid of this mess.
+      $ foldr (\a _ -> fromMaybe HS.empty
+                $ a
+                ^. subscriptionL
                 ^? _Just
                 . typeContentL
                 . objectFieldsL
@@ -206,8 +237,22 @@ filterMutation schemas = filterSchema schemas "Mutation" getMutationTypeName
   where
     getMutationTypeName :: Schema VALID -> Text
     getMutationTypeName schema = fromMaybe mempty
+    -- TODO: replace with _Just
       $ schema
       ^. mutationL
+      <&> (\sub -> sub ^. typeNameL & readTypeName )
+
+-- |
+filterSubscription
+  :: [ Either StitchVomitError ( Schema VALID )]
+  -> [ Either StitchVomitError ( Schema VALID ) ]
+filterSubscription schemas = filterSchema schemas "Subscription" getSubscriptionTypeName
+  where
+    getSubscriptionTypeName :: Schema VALID -> Text
+    getSubscriptionTypeName schema = fromMaybe mempty
+    -- TODO: replace with _Just
+      $ schema
+      ^. subscriptionL
       <&> (\mut -> mut ^. typeNameL & readTypeName )
 
 -- | Get first matching query. Its purpose is to serve as some sort of accumulator
@@ -225,6 +270,12 @@ getFirstMutation
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
 getFirstMutation parsedDocs = head $ fromList $ take 1 $ filterMutation parsedDocs
+
+-- |
+getFirstSubscription
+  :: [ Either StitchVomitError ( Schema VALID ) ]
+  -> Either StitchVomitError ( Schema VALID )
+getFirstSubscription parsedDocs = head $ fromList $ take 1 $ filterSubscription parsedDocs
 
 -- | Render schema as human readable text.
 renderSchema :: ( Schema VALID ) -> ByteString
@@ -247,6 +298,18 @@ updateSchemaMutationEntries
   -> Schema VALID
 updateSchemaMutationEntries newMapEntries s = s
   & mutationL
+  . _Just
+  . typeContentL
+  . objectFieldsL
+  . mapEntriesL
+  .~ newMapEntries
+
+updateSchemaSubscriptionEntries
+  :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
+  -> Schema VALID
+  -> Schema VALID
+updateSchemaSubscriptionEntries newMapEntries s = s
+  & subscriptionL
   . _Just
   . typeContentL
   . objectFieldsL
@@ -285,6 +348,9 @@ queryL = lens query (\q newQuery -> q { query = newQuery })
 mutationL :: Lens' ( Schema VALID ) ( Maybe ( TypeDefinition OBJECT VALID ) )
 mutationL = lens mutation (\m newMutation -> m { mutation = newMutation })
 
+subscriptionL :: Lens' ( Schema VALID ) ( Maybe ( TypeDefinition OBJECT VALID ) )
+subscriptionL = lens subscription (\s newSub -> s { subscription = newSub })
+
 typeNameL :: Lens' ( TypeDefinition a s ) TypeName
 typeNameL = lens typeName (\td newTypeName -> td { typeName = newTypeName })
 
@@ -296,4 +362,3 @@ objectFieldsL = lens objectFields (\dt newObjectFields -> dt { objectFields = ne
 
 mapEntriesL :: Lens' ( OrdMap k a ) ( HashMap k ( Indexed k a ) )
 mapEntriesL = lens mapEntries (\om newOrdMap -> om { mapEntries = newOrdMap })
-

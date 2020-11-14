@@ -1,5 +1,5 @@
 type Query {
-  person: Person
+  getPerson(name: String): Person
 }
 
 type Mutation {

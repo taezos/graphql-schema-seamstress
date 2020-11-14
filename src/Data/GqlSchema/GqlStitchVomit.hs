@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-module Data.GqlStitchVomit where
+module Data.GqlSchema.GqlStitchVomit where
 
 -- graphql-stitch-vomit
 import           Data.GqlSchema.CLI
