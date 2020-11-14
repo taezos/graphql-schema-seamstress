@@ -4,8 +4,15 @@ type Query {
 
 type Mutation {
   setDogName(name: String): Dog
+  addDog(dog: DogInput): Dog
 }
 
 type Dog {
   name: String
+  breed: String
+}
+
+input DogInput {
+  name: String
+  breed: String
 }
