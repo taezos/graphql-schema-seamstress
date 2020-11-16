@@ -47,10 +47,9 @@ library
 
 executable graphql-stitch-vomit
   main-is:             Main.hs
-  -- other-extensions:
   build-depends:       base ^>=4.13.0.0, graphql-stitch-vomit
                      , relude
-  -- hs-source-dirs:
+  hs-source-dirs:      app
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude
 
