@@ -78,7 +78,7 @@ vomitQueryImpl fp schema = do
   writeResponse <- writeSchema fp schema
   absolutePath <- liftIO $ getCurrentDirectory
   either
-    ( const $ throwError $ StitchVomitError "Invalid output path" )
+    (\err -> throwError err)
     ( const $ pure $ absolutePath <> ( pathSeparator : fp ) )
     writeResponse
 
@@ -92,7 +92,7 @@ writeSchema fp schema = do
   writeResponse <- liftIO $ tryAny $ BS.writeFile fp ( vomitMessage <> renderSchema schema )
   absolutePath <- liftIO getCurrentDirectory
   pure $ bimap
-    ( const $ StitchVomitError "Invalid output path" )
+    ( StitchVomitError . show )
     ( const $ absolutePath <> ( pathSeparator : fp ) )
     writeResponse
   where
@@ -273,7 +273,10 @@ filterSubscription schemas = filterSchema schemas "Subscription" getSubscription
 getFirstQuery
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstQuery parsedDocs = getFirstBaseFn filterQuery parsedDocs
+getFirstQuery parsedDocs = maybe
+  ( throwError $ StitchVomitError "No Query found." )
+  id
+  ( getFirstBaseFn filterQuery parsedDocs )
 
 
 -- | Get first matching mutation. Its purpose is to serve as some sort of accumulator
@@ -282,7 +285,10 @@ getFirstQuery parsedDocs = getFirstBaseFn filterQuery parsedDocs
 getFirstMutation
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstMutation parsedDocs = getFirstBaseFn filterMutation parsedDocs
+getFirstMutation parsedDocs = maybe
+  ( throwError $ StitchVomitError "No Mutation found." )
+  id
+  ( getFirstBaseFn filterMutation parsedDocs )
 
 -- | Get first matching subscription. Its purpose is to serve as some sort of accumulator
 -- for the rest of the Queries. In other words, get the first subscription and stick the
@@ -290,14 +296,17 @@ getFirstMutation parsedDocs = getFirstBaseFn filterMutation parsedDocs
 getFirstSubscription
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstSubscription parsedDocs = getFirstBaseFn filterSubscription parsedDocs
+getFirstSubscription parsedDocs = maybe
+  ( throwError $ StitchVomitError "No Subscription found." )
+  id
+  ( getFirstBaseFn filterSubscription parsedDocs )
 
 -- | Base function for getting first Schema entity/field.
 getFirstBaseFn
   :: ( [ Either StitchVomitError ( Schema VALID ) ] -> [a])
   -> [ Either StitchVomitError ( Schema VALID ) ]
-  -> a
-getFirstBaseFn filterFn parsedDocs = head $ fromList $ take 1 $ filterFn parsedDocs
+  -> Maybe a
+getFirstBaseFn filterFn parsedDocs = listToMaybe $ take 1 $ filterFn parsedDocs
 
 -- | Render schema as human readable text.
 renderSchema :: ( Schema VALID ) -> ByteString
