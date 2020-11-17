@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 module Data.GqlSchema.Stitch where
 
 -- bytestring
@@ -18,6 +19,7 @@ import           Import
 
 -- lens
 import           Control.Lens.Lens
+import           Control.Lens.Fold
 import           Control.Lens.Operators
 import           Control.Lens.Prism
 
@@ -55,8 +57,8 @@ readSchemasImpl fp =  do
     Left _ -> throwError $ StitchVomitError "Invalid source directory path"
     Right filePaths -> do
       res <- liftIO $ fmap ( first ( const $ StitchVomitError "Unable to read schemas" ) )
-        $ tryAny
-        $ sequence
+        . tryAny
+        . sequence
         $ BS.readFile <$> ( mkFilePathsValid filePaths )
       liftEither res
   where
@@ -101,16 +103,16 @@ writeSchema fp schema = do
       , "\"\"\""
       ]
 
--- | Stitches all the type Queries in one file.
+-- | Stitches all the type Queries, Mutation, and Subscription in one file.
 stitchSchemasImpl
   :: MonadError StitchVomitError m
   => Schemas
   -> m ( Schema VALID )
 stitchSchemasImpl schemas = liftEither
-  $ fmap ( updateSchemaSubscription $ parseDocument <$> schemas )
-  $ fmap ( updateSchemaMutation $ parseDocument <$> schemas )
-  $ updateSchemaTypes ( parseDocument <$> schemas )
-  $ appendAllSchemaQueries
+  . fmap ( updateSchemaSubscription $ parseDocument <$> schemas )
+  . fmap ( updateSchemaMutation $ parseDocument <$> schemas )
+  . updateSchemaTypes ( parseDocument <$> schemas )
+  . appendAllSchemaQueries
   $ parseDocument
   <$> schemas
 
@@ -130,27 +132,34 @@ appendAllSchemaQueries parsedDocs = first ( const $ StitchVomitError "Schema que
     mkQueryMapEntries
       :: [ Either StitchVomitError ( Schema VALID ) ]
       -> HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
-    mkQueryMapEntries pds = HS.unions
-      $ foldr (\a _ -> a ^. queryL . typeContentL . objectFieldsL . mapEntriesL ) HS.empty
-      <$> pds
+    mkQueryMapEntries pds = pds
+      ^.. folded
+      . _Right
+      . queryL
+      . typeContentL
+      . objectFieldsL
+      . mapEntriesL
+      & HS.unions
 
+-- | Update the Mutation field in `Schema`.
 updateSchemaMutation
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Schema VALID
   -> Schema VALID
-updateSchemaMutation parsedDocs stitchedQuery =
-  let stitchedMutation = stitchMutations parsedDocs ^? _Right . mutationL & join
-  in stitchedQuery & mutationL .~ stitchedMutation
+updateSchemaMutation parsedDocs stitchedSchema = stitchedSchema
+  & mutationL
+  .~ ( stitchMutations parsedDocs ^? _Right . mutationL . _Just )
 
+-- | Update the Subscription field in `Schema`.
 updateSchemaSubscription
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Schema VALID
   -> Schema VALID
-updateSchemaSubscription parsedDocs stitchedMutation =
-  let stitchedSubscription = stitchSubscriptions parsedDocs ^? _Right . subscriptionL & join
-  in stitchedMutation & subscriptionL .~ stitchedSubscription
+updateSchemaSubscription parsedDocs stitchedSchema = stitchedSchema
+  & subscriptionL
+  .~ ( stitchSubscriptions  parsedDocs ^? _Right . subscriptionL . _Just )
 
--- | Stitches all mutations. This does not consider what happens with the `query`
+-- | Stitch all mutations. This does not consider what happens with the `query`
 -- so it is used in `updateSchemaMutation` where the mutation field is taken out and
 -- appened to the schema which already has a stitched query.
 stitchMutations
@@ -164,17 +173,19 @@ stitchMutations parsedDocs =
     mkMutationMapEntries
       :: [ Either StitchVomitError ( Schema VALID ) ]
       -> HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
-    mkMutationMapEntries pds = HS.unions
-    -- TODO: learn folds to get rid of this mess.
-      $ foldr (\a _ -> fromMaybe HS.empty
-                $ a
-                ^. mutationL
-                ^? _Just
-                . typeContentL
-                . objectFieldsL
-                . mapEntriesL
-              ) HS.empty <$> pds
+    mkMutationMapEntries pds = pds
+      ^.. folded
+      . _Right
+      . mutationL
+      . _Just
+      . typeContentL
+      . objectFieldsL
+      . mapEntriesL
+      & HS.unions
 
+-- | Stitch all subscriptions.This does not consider what happens with the `query`
+-- so it is used in `updateSchemaSubscription` where the mutation field is taken
+-- out and appened to the schema which already has a stitched query.
 stitchSubscriptions
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
@@ -186,16 +197,15 @@ stitchSubscriptions parsedDocs =
     mkSubscriptionEntries
       :: [ Either StitchVomitError ( Schema VALID ) ]
       -> HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
-    mkSubscriptionEntries pds = HS.unions
-    -- TODO: learn folds to get rid of this mess.
-      $ foldr (\a _ -> fromMaybe HS.empty
-                $ a
-                ^. subscriptionL
-                ^? _Just
-                . typeContentL
-                . objectFieldsL
-                . mapEntriesL
-              ) HS.empty <$> pds
+    mkSubscriptionEntries pds = pds
+      ^.. folded
+      . _Right
+      . subscriptionL
+      . _Just
+      . typeContentL
+      . objectFieldsL
+      . mapEntriesL
+      & HS.unions
 
 -- | Filter for type with matching type name. Takes only the matching type name
 -- and filters out the rest.
@@ -227,7 +237,7 @@ filterQuery
 filterQuery schemas = filterSchema schemas "Query" getQueryTypeName
   where
     getQueryTypeName :: Schema VALID -> Text
-    getQueryTypeName schema = ( schema ^. queryL . typeNameL & readTypeName )
+    getQueryTypeName schema = schema ^. queryL . typeNameL & readTypeName
 
 -- | Takes Mutation and filters out the rest.
 filterMutation
@@ -236,24 +246,26 @@ filterMutation
 filterMutation schemas = filterSchema schemas "Mutation" getMutationTypeName
   where
     getMutationTypeName :: Schema VALID -> Text
-    getMutationTypeName schema = fromMaybe mempty
-    -- TODO: replace with _Just
-      $ schema
+    getMutationTypeName schema =  schema
       ^. mutationL
-      <&> (\sub -> sub ^. typeNameL & readTypeName )
+      ^? _Just
+      . typeNameL
+      . readTypeNameL
+      & fromMaybe mempty
 
--- |
+-- | Takes Subscription and filters out the rest.
 filterSubscription
-  :: [ Either StitchVomitError ( Schema VALID )]
+  :: [ Either StitchVomitError ( Schema VALID ) ]
   -> [ Either StitchVomitError ( Schema VALID ) ]
 filterSubscription schemas = filterSchema schemas "Subscription" getSubscriptionTypeName
   where
     getSubscriptionTypeName :: Schema VALID -> Text
-    getSubscriptionTypeName schema = fromMaybe mempty
-    -- TODO: replace with _Just
-      $ schema
+    getSubscriptionTypeName schema = schema
       ^. subscriptionL
-      <&> (\mut -> mut ^. typeNameL & readTypeName )
+      ^? _Just
+      . typeNameL
+      . readTypeNameL
+      & fromMaybe mempty
 
 -- | Get first matching query. Its purpose is to serve as some sort of accumulator
 -- for the rest of the Queries. In other words, get the first query and stick the
@@ -261,7 +273,8 @@ filterSubscription schemas = filterSchema schemas "Subscription" getSubscription
 getFirstQuery
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstQuery parsedDocs = head $ fromList $ take 1 $ filterQuery parsedDocs
+getFirstQuery parsedDocs = getFirstBaseFn filterQuery parsedDocs
+
 
 -- | Get first matching mutation. Its purpose is to serve as some sort of accumulator
 -- for the rest of the Queries. In other words, get the first mutation and stick the
@@ -269,13 +282,22 @@ getFirstQuery parsedDocs = head $ fromList $ take 1 $ filterQuery parsedDocs
 getFirstMutation
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstMutation parsedDocs = head $ fromList $ take 1 $ filterMutation parsedDocs
+getFirstMutation parsedDocs = getFirstBaseFn filterMutation parsedDocs
 
--- |
+-- | Get first matching subscription. Its purpose is to serve as some sort of accumulator
+-- for the rest of the Queries. In other words, get the first subscription and stick the
+-- rest of the matching queries into this one.
 getFirstSubscription
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
-getFirstSubscription parsedDocs = head $ fromList $ take 1 $ filterSubscription parsedDocs
+getFirstSubscription parsedDocs = getFirstBaseFn filterSubscription parsedDocs
+
+-- | Base function for getting first Schema entity/field.
+getFirstBaseFn
+  :: ( [ Either StitchVomitError ( Schema VALID ) ] -> [a])
+  -> [ Either StitchVomitError ( Schema VALID ) ]
+  -> a
+getFirstBaseFn filterFn parsedDocs = head $ fromList $ take 1 $ filterFn parsedDocs
 
 -- | Render schema as human readable text.
 renderSchema :: ( Schema VALID ) -> ByteString
@@ -285,7 +307,7 @@ updateSchemaQueryEntries
   :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
   -> Schema VALID
   -> Schema VALID
-updateSchemaQueryEntries newMapEntries s = s
+updateSchemaQueryEntries newMapEntries schema = schema
   & queryL
   . typeContentL
   . objectFieldsL
@@ -296,7 +318,7 @@ updateSchemaMutationEntries
   :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
   -> Schema VALID
   -> Schema VALID
-updateSchemaMutationEntries newMapEntries s = s
+updateSchemaMutationEntries newMapEntries schema = schema
   & mutationL
   . _Just
   . typeContentL
@@ -308,7 +330,7 @@ updateSchemaSubscriptionEntries
   :: HashMap FieldName ( Indexed FieldName ( FieldDefinition OUT VALID ) )
   -> Schema VALID
   -> Schema VALID
-updateSchemaSubscriptionEntries newMapEntries s = s
+updateSchemaSubscriptionEntries newMapEntries schema = schema
   & subscriptionL
   . _Just
   . typeContentL
@@ -320,22 +342,32 @@ updateSchemaSubscriptionEntries newMapEntries s = s
 mkEmptyTypes :: Schema s -> Schema s
 mkEmptyTypes s = s & typesL .~ ( unsafeFromList [] )
 
+-- | Updates the types field of `Schema`.
 updateSchemaTypes
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
   -> Either StitchVomitError ( Schema VALID )
-updateSchemaTypes parsedDocs updatedSchema = case updatedSchema of
-  Left err -> Left err
-  Right schema ->
-    let
-      ts :: [ TypeLib VALID ]
-      ts = foldr
-        (\a b -> case a of
-            Left _  -> b
-            Right d -> d : b
-            )
-        [] ( parsedDocs <&> (\parsedDoc -> parsedDoc <&> ( ^. typesL ) ) )
-    in Right $ schema & typesL .~ ( unsafeFromList $ HS.toList $ HS.unions $ unsafeToHashMap <$> ts )
+updateSchemaTypes parsedDocs updatedSchema = second
+  (\schema -> schema
+    & typesL
+    .~ ( mkNewTypeLib parsedDocs ))
+    updatedSchema
+  where
+    mkTypeLib
+      :: [ Either StitchVomitError ( Schema VALID ) ]
+      -> [ TypeLib VALID ]
+    mkTypeLib pDocs =
+      foldr (\a accum -> either ( const accum ) ( : accum ) $ a )
+      [] ( pDocs <&> fmap types )
+
+    mkNewTypeLib
+      :: [ Either StitchVomitError ( Schema VALID ) ]
+      -> SafeHashMap TypeName ( TypeDefinition ANY VALID )
+    mkNewTypeLib pDocs = unsafeFromList
+      . HS.toList
+      . HS.unions
+      $ unsafeToHashMap
+      <$> mkTypeLib pDocs
 
 -- * Lens Util
 
@@ -362,3 +394,6 @@ objectFieldsL = lens objectFields (\dt newObjectFields -> dt { objectFields = ne
 
 mapEntriesL :: Lens' ( OrdMap k a ) ( HashMap k ( Indexed k a ) )
 mapEntriesL = lens mapEntries (\om newOrdMap -> om { mapEntries = newOrdMap })
+
+readTypeNameL :: Lens' TypeName Text
+readTypeNameL = lens readTypeName (\tn newTypeName -> tn { readTypeName = newTypeName })
