@@ -159,9 +159,9 @@ updateSchemaSubscription parsedDocs stitchedSchema = stitchedSchema
   & subscriptionL
   .~ ( stitchSubscriptions  parsedDocs ^? _Right . subscriptionL . _Just )
 
--- | Stitch all mutations. This does not consider what happens with the `query`
--- so it is used in `updateSchemaMutation` where the mutation field is taken out and
--- appened to the schema which already has a stitched query.
+-- | Stitch all mutations. This ignores `query` field,
+-- it is then used in `updateSchemaMutation` where the mutation field is extracted and
+-- appended to the input schema which already has a stitched query.
 stitchMutations
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
@@ -183,9 +183,9 @@ stitchMutations parsedDocs =
       . mapEntriesL
       & HS.unions
 
--- | Stitch all subscriptions.This does not consider what happens with the `query`
--- so it is used in `updateSchemaSubscription` where the mutation field is taken
--- out and appened to the schema which already has a stitched query.
+-- | Stitch all subscriptions. This ignoreds the `query` field,
+-- it is used then in `updateSchemaSubscription` where the subscription field is extracted
+-- appended to the schema which already has a stitched query.
 stitchSubscriptions
   :: [ Either StitchVomitError ( Schema VALID ) ]
   -> Either StitchVomitError ( Schema VALID )
