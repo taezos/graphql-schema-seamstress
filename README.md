@@ -72,3 +72,23 @@ schema {
 }
 ```
 
+## Building it yourself
+
+With Nix
+``` sh
+nix-shell
+```
+Once you are in a nix shell
+
+``` sh
+cabal build
+cabal install # installs in .cabal/bin
+```
+
+#### If you want to build the static binary yourself
+
+Without going into a nix-shell
+``` sh
+nix-build static.nix
+```
+
